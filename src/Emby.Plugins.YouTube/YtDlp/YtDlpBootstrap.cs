@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Model.Logging;
@@ -100,6 +101,7 @@ namespace Emby.Plugins.YouTube.YtDlp
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(temp, target);
                 MakeExecutable(target);
+                FixElfInterpreterIfNeeded(target);
 
                 _logger.Info("YouTube: yt-dlp installed at {0}", target);
             }
@@ -169,6 +171,132 @@ namespace Emby.Plugins.YouTube.YtDlp
                 _logger.ErrorException("YouTube: could not read the installed yt-dlp version.", ex);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Repoints the binary's ELF interpreter when the one it asks for is missing.
+        ///
+        /// Found the hard way on a real deployment: the official `emby/embyserver` image has no
+        /// `/lib64` directory at all, but yt-dlp's release binaries hard-code
+        /// `/lib64/ld-linux-x86-64.so.2` as their interpreter. The kernel cannot find the loader and
+        /// the exec fails with a bare "not found" — which looks exactly like a missing file and
+        /// sends you hunting in the wrong direction entirely.
+        ///
+        /// The loader itself is present, just at `/lib/ld-linux-x86-64.so.2`. Invoking it explicitly
+        /// (`ld-linux… yt-dlp`) does not work: PyInstaller resolves its own executable path and then
+        /// fails to find its embedded archive. Symlinking `/lib64` inside the container does work,
+        /// but lives in the container's writable layer and is destroyed on every image update.
+        ///
+        /// So the fix is applied to our own copy of the binary, which lives on the persistent config
+        /// volume. `/lib/…` is one byte shorter than `/lib64/…`, so the new path fits in the existing
+        /// PT_INTERP slot and the segment size never changes — no offsets move.
+        /// </summary>
+        private void FixElfInterpreterIfNeeded(string path)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return;
+
+            try
+            {
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    if (!TryFindInterpreter(stream, out var interpOffset, out var interpSize, out var current))
+                        return;
+
+                    if (string.IsNullOrEmpty(current) || File.Exists(current))
+                        return; // The interpreter it wants is present; nothing to do.
+
+                    var candidate = FindExistingLoader(current);
+                    if (candidate == null)
+                    {
+                        _logger.Warn("YouTube: yt-dlp wants ELF interpreter '{0}', which is missing, and no replacement was found. It will probably fail to start.", current);
+                        return;
+                    }
+
+                    // Needs room for the path plus its NUL terminator.
+                    var bytes = Encoding.ASCII.GetBytes(candidate);
+                    if (bytes.Length + 1 > interpSize)
+                    {
+                        _logger.Warn("YouTube: replacement interpreter '{0}' does not fit the existing slot; leaving the binary alone.", candidate);
+                        return;
+                    }
+
+                    var buffer = new byte[interpSize];
+                    Array.Copy(bytes, buffer, bytes.Length); // remainder stays zero-filled
+
+                    stream.Position = interpOffset;
+                    stream.Write(buffer, 0, buffer.Length);
+                    stream.Flush();
+
+                    _logger.Info("YouTube: repointed yt-dlp's ELF interpreter from '{0}' to '{1}'.", current, candidate);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Never fatal: on a normal host the interpreter is already correct.
+                _logger.ErrorException("YouTube: could not inspect or patch the yt-dlp ELF interpreter.", ex);
+            }
+        }
+
+        /// <summary>Locates the PT_INTERP segment of a little-endian ELF64 image.</summary>
+        private static bool TryFindInterpreter(FileStream stream, out long offset, out int size, out string current)
+        {
+            const int PT_INTERP = 3;
+            offset = 0;
+            size = 0;
+            current = null;
+
+            var header = new byte[64];
+            stream.Position = 0;
+            if (stream.Read(header, 0, header.Length) != header.Length) return false;
+
+            // Magic, then EI_CLASS == 2 (64-bit) and EI_DATA == 1 (little endian).
+            if (header[0] != 0x7F || header[1] != 'E' || header[2] != 'L' || header[3] != 'F') return false;
+            if (header[4] != 2 || header[5] != 1) return false;
+
+            var phoff = BitConverter.ToInt64(header, 0x20);
+            var phentsize = BitConverter.ToUInt16(header, 0x36);
+            var phnum = BitConverter.ToUInt16(header, 0x38);
+            if (phoff <= 0 || phentsize < 56 || phnum == 0) return false;
+
+            var entry = new byte[phentsize];
+            for (var i = 0; i < phnum; i++)
+            {
+                stream.Position = phoff + (long)i * phentsize;
+                if (stream.Read(entry, 0, entry.Length) != entry.Length) return false;
+
+                if (BitConverter.ToUInt32(entry, 0) != PT_INTERP) continue;
+
+                var segmentOffset = BitConverter.ToInt64(entry, 0x08);
+                var segmentSize = BitConverter.ToInt64(entry, 0x20);
+                if (segmentSize <= 0 || segmentSize > 4096) return false;
+
+                var raw = new byte[segmentSize];
+                stream.Position = segmentOffset;
+                if (stream.Read(raw, 0, raw.Length) != raw.Length) return false;
+
+                var terminator = Array.IndexOf(raw, (byte)0);
+                current = Encoding.ASCII.GetString(raw, 0, terminator < 0 ? raw.Length : terminator);
+                offset = segmentOffset;
+                size = (int)segmentSize;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Looks for the same loader filename in the usual library directories.</summary>
+        private static string FindExistingLoader(string missingPath)
+        {
+            var name = Path.GetFileName(missingPath);
+            if (string.IsNullOrEmpty(name)) return null;
+
+            foreach (var directory in new[] { "/lib", "/lib64", "/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu" })
+            {
+                var candidate = Path.Combine(directory, name);
+                if (candidate != missingPath && File.Exists(candidate)) return candidate;
+            }
+            return null;
         }
 
         /// <summary>
