@@ -111,19 +111,35 @@ namespace Emby.Plugins.YouTube.YtDlp
                 return videos;
             }
 
-            var arguments = new List<string>
+            List<string> BuildArguments(bool useCookies)
             {
-                target,
-                "--flat-playlist",       // metadata only; do not resolve each video's streams
-                "--dump-single-json",
-                "--no-warnings",
-                "--ignore-errors",
-                "--no-progress",
-                "--playlist-end", Math.Max(1, maxResults).ToString(CultureInfo.InvariantCulture)
-            };
-            AddCommonArguments(arguments);
+                var arguments = new List<string>
+                {
+                    target,
+                    "--flat-playlist",       // metadata only; do not resolve each video's streams
+                    "--dump-single-json",
+                    "--no-warnings",
+                    "--ignore-errors",
+                    "--no-progress",
+                    "--playlist-end", Math.Max(1, maxResults).ToString(CultureInfo.InvariantCulture)
+                };
+                AddCommonArguments(arguments, useCookies);
+                return arguments;
+            }
 
-            var result = await Execute(arguments, TimeSpan.FromSeconds(Config.MetadataTimeoutSeconds), cancellationToken).ConfigureAwait(false);
+            var result = await Execute(BuildArguments(true), TimeSpan.FromSeconds(Config.MetadataTimeoutSeconds), cancellationToken).ConfigureAwait(false);
+
+            // Same stale-cookie trap as Resolve. Feeds that genuinely need a signed-in session are
+            // excluded — retrying those anonymously would quietly return generic results and pass
+            // them off as personalised.
+            if (result == null && HasCookies && !requireCookies)
+            {
+                _logger.Warn("YouTube: '{0}' failed using the saved cookies; retrying without them. If this "
+                           + "succeeds, the cookies are stale — re-export from a private window and close it "
+                           + "immediately.", target);
+                result = await Execute(BuildArguments(false), TimeSpan.FromSeconds(Config.MetadataTimeoutSeconds), cancellationToken).ConfigureAwait(false);
+            }
+
             if (result == null) return videos;
 
             JsonValue json;
@@ -192,53 +208,34 @@ namespace Emby.Plugins.YouTube.YtDlp
         {
             var sources = new List<MediaSourceInfo>();
 
-            var arguments = new List<string>
-            {
-                "https://www.youtube.com/watch?v=" + videoId,
-                "--dump-single-json",
-                "--no-warnings",
-                "--no-progress",
-                "--format", BuildFormatSelector()
-            };
-            AddCommonArguments(arguments);
+            var attempt = await TryResolve(videoId, useCookies: true, cancellationToken).ConfigureAwait(false);
 
-            var result = await Execute(arguments, TimeSpan.FromSeconds(Config.ResolveTimeoutSeconds), cancellationToken).ConfigureAwait(false);
-            if (result == null) return sources;
-
-            JsonValue json;
-            try
+            // Stale cookies are worse than none: YouTube rotates a cookie set as soon as the browser
+            // session that exported it keeps being used, and then answers requests carrying them with
+            // "No video formats found" — even for videos that resolve perfectly anonymously. So the
+            // retry hangs off "we got no usable URL", not "the process failed": yt-dlp still writes
+            // JSON to stdout when only the format selector came up empty, so an exit-code check
+            // would never fire here.
+            if (attempt.Url == null && HasCookies)
             {
-                json = Json.Parse(result.StandardOutput);
-            }
-            catch (FormatException ex)
-            {
-                _logger.ErrorException("YouTube: could not parse the resolve response for " + videoId + ".", ex);
-                return sources;
-            }
-
-            var url = json["url"].AsString;
-
-            // When the selector lands on a DASH pair, yt-dlp reports requested_formats instead of a
-            // single url. Emby can only be handed one URL per source, so take the muxed-capable
-            // video entry only if it also carries audio; otherwise there is nothing playable here.
-            if (string.IsNullOrEmpty(url))
-            {
-                foreach (var format in json["requested_formats"].Array)
+                var anonymous = await TryResolve(videoId, useCookies: false, cancellationToken).ConfigureAwait(false);
+                if (anonymous.Url != null)
                 {
-                    if (!string.Equals(format["acodec"].AsString, "none", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(format["vcodec"].AsString, "none", StringComparison.OrdinalIgnoreCase))
-                    {
-                        url = format["url"].AsString;
-                        break;
-                    }
+                    _logger.Warn("YouTube: {0} resolved only after dropping the saved cookies, so those cookies are "
+                               + "stale. Re-export them from a private browser window and close it immediately, "
+                               + "before YouTube can rotate them.", videoId);
+                    attempt = anonymous;
                 }
             }
+
+            var json = attempt.Json;
+            var url = attempt.Url;
 
             if (string.IsNullOrEmpty(url))
             {
                 // The bot check is by far the most common reason a resolve fails, and the raw
                 // stderr buries the one thing that actually fixes it. Call it out explicitly.
-                if (LooksLikeBotCheck(result.StandardError))
+                if (LooksLikeBotCheck(attempt.StandardError))
                 {
                     _logger.Error(
                         "YouTube: {0} could not be resolved because YouTube is challenging this server with its " +
@@ -248,7 +245,7 @@ namespace Emby.Plugins.YouTube.YtDlp
                 }
                 else
                 {
-                    _logger.Error("YouTube: no playable single-file stream for {0}. stderr: {1}", videoId, Truncate(result.StandardError, 500));
+                    _logger.Error("YouTube: no playable single-file stream for {0}. stderr: {1}", videoId, Truncate(attempt.StandardError, 500));
                 }
                 return sources;
             }
@@ -292,6 +289,65 @@ namespace Emby.Plugins.YouTube.YtDlp
             return sources;
         }
 
+        /// <summary>One resolve attempt: the parsed response, the single playable URL (if any), and stderr.</summary>
+        private class ResolveAttempt
+        {
+            public JsonValue Json = new JsonValue(null);
+            public string Url;
+            public string StandardError = string.Empty;
+        }
+
+        private async Task<ResolveAttempt> TryResolve(string videoId, bool useCookies, CancellationToken cancellationToken)
+        {
+            var attempt = new ResolveAttempt();
+
+            var arguments = new List<string>
+            {
+                "https://www.youtube.com/watch?v=" + videoId,
+                "--dump-single-json",
+                "--no-warnings",
+                "--no-progress",
+                "--format", BuildFormatSelector()
+            };
+            AddCommonArguments(arguments, useCookies);
+
+            var result = await Execute(arguments, TimeSpan.FromSeconds(Config.ResolveTimeoutSeconds), cancellationToken).ConfigureAwait(false);
+            if (result == null) return attempt;
+
+            attempt.StandardError = result.StandardError ?? string.Empty;
+
+            try
+            {
+                attempt.Json = Json.Parse(result.StandardOutput);
+            }
+            catch (FormatException ex)
+            {
+                _logger.ErrorException("YouTube: could not parse the resolve response for " + videoId + ".", ex);
+                return attempt;
+            }
+
+            var url = attempt.Json["url"].AsString;
+
+            // When the selector lands on a DASH pair, yt-dlp reports requested_formats instead of a
+            // single url. Emby can only be handed one URL per source, so take an entry only if it
+            // carries both streams; otherwise there is nothing playable here.
+            if (string.IsNullOrEmpty(url))
+            {
+                foreach (var format in attempt.Json["requested_formats"].Array)
+                {
+                    if (!string.Equals(format["acodec"].AsString, "none", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(format["vcodec"].AsString, "none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        url = format["url"].AsString;
+                        break;
+                    }
+                }
+            }
+
+            attempt.Url = string.IsNullOrEmpty(url) ? null : url;
+            return attempt;
+        }
+
         /// <summary>
         /// Prefers a single progressive file that already contains both video and audio.
         ///
@@ -318,9 +374,9 @@ namespace Emby.Plugins.YouTube.YtDlp
 
         // ---- Plumbing ------------------------------------------------------------------------
 
-        private void AddCommonArguments(List<string> arguments)
+        private void AddCommonArguments(List<string> arguments, bool useCookies = true)
         {
-            if (HasCookies)
+            if (useCookies && HasCookies)
             {
                 arguments.Add("--cookies");
                 arguments.Add(CookiesFilePath);
