@@ -1,9 +1,10 @@
 # emby-youtube
 
 > **AI-assisted project.** This codebase was created with [Claude Code](https://claude.com/claude-code)
-> (Anthropic), directed and reviewed by a human author. It **compiles cleanly against the Emby 4.9
-> plugin API** but has **not** been loaded into a running Emby server, and no video has been played
-> through it. See [Verification](#verification) for exactly what is and is not proven.
+> (Anthropic), directed and reviewed by a human author. It has been **deployed to a real Emby
+> 4.9.5.0 server**, where browsing, search and the configuration page are confirmed working.
+> Playback is blocked by YouTube's bot check unless cookies are supplied. See
+> [Verification](#verification) for exactly what is and is not proven.
 
 A YouTube channel plugin for Emby Server. Browse your subscriptions, see recent uploads from all of
 them in one feed, get your real recommendation feed, and run saved searches — all from any Emby
@@ -99,11 +100,19 @@ You need your own Google Cloud project — the plugin ships no API credentials.
 The device-code flow is used because a media server is headless: there is no browser on the box and
 no reliable redirect URI to come back to.
 
-### Cookies (for Recommended)
+### Cookies (needed for playback, not just Recommended)
 
-The **Recommended** section needs cookies, because YouTube only serves a personalised home feed to a
-signed-in session. Export a `cookies.txt` in Netscape format from a browser signed in to your
-account and paste it into the settings.
+Two things need cookies:
+
+1. **Recommended**, because YouTube only serves a personalised home feed to a signed-in session.
+2. **Playback** — and this one is not optional in practice. On a server whose IP YouTube has
+   flagged, resolving a video's streams fails with *"Sign in to confirm you're not a bot"*. Browsing
+   and search still work unauthenticated; playback does not. Every `player_client` was tried against
+   a flagged IP (`tv`, `ios`, `web_safari`, `android_vr`, `mweb`) and each returned either the bot
+   check or storyboard-only formats. Cookies were the only thing that worked.
+
+Export a `cookies.txt` in Netscape format from a browser signed in to your account and paste it into
+the settings.
 
 > These cookies grant access to your Google account. They are stored in Emby's plugin configuration
 > and written to the plugin data folder on the server. Anyone with access to either can use them.
@@ -116,12 +125,15 @@ Honest status, because "it compiles" is not "it works":
 | Area                                            | Status                                          |
 | ----------------------------------------------- | ----------------------------------------------- |
 | Compiles against Emby 4.9.1.90 API              | **Verified** — clean build, zero warnings       |
-| Single-DLL output, no stray dependencies        | **Verified** — build output inspected           |
+| Single-DLL output, no stray dependencies        | **Verified** — enforced by CI                   |
 | API surface matches the real 4.9 assemblies     | **Verified** — dumped by reflection, not guessed |
-| Loads into a running Emby server                | **Not tested**                                  |
-| Folder browsing, feeds, playback                | **Not tested**                                  |
-| OAuth device flow end to end                    | **Not tested**                                  |
-| yt-dlp download and stream resolution           | **Not tested**                                  |
+| Loads into a running Emby server                | **Verified** — Emby 4.9.5.0, zero errors        |
+| Configuration page loads and saves              | **Verified** — round-trips to disk              |
+| yt-dlp self-download + ELF interpreter patch    | **Verified** — runs in the stock Emby container |
+| Live search via yt-dlp                          | **Verified** — 50 videos indexed from a search  |
+| Channel appears with its folders                | **Verified** — visible in the Emby UI           |
+| Subscriptions / Latest / Recommended feeds      | **Not tested** — needs OAuth and cookies        |
+| Playback                                        | **Blocked without cookies** — see above         |
 
 The API surface was dumped from `MediaBrowser.Controller.dll` and `MediaBrowser.Model.dll` 4.9.1.90
 via `MetadataLoadContext` rather than copied from tutorials — which is how the obsolete-interface

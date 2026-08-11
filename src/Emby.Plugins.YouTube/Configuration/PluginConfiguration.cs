@@ -77,6 +77,17 @@ namespace Emby.Plugins.YouTube.Configuration
         /// </summary>
         public bool PreferProgressive { get; set; }
 
+        /// <summary>
+        /// Optional yt-dlp <c>youtube:player_client</c> override (e.g. "tv", "ios", "web_safari").
+        /// Empty uses yt-dlp's own default.
+        ///
+        /// Kept configurable because which clients YouTube accepts changes without notice. On a
+        /// server IP that YouTube has flagged, every client tested returned either the bot check or
+        /// storyboards only — cookies were the sole thing that worked — but the right value moves
+        /// around, so it should not need a plugin release to change.
+        /// </summary>
+        public string PlayerClient { get; set; }
+
         public int ResolveTimeoutSeconds { get; set; } = 60;
         public int MetadataTimeoutSeconds { get; set; } = 120;
 

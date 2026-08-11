@@ -236,7 +236,20 @@ namespace Emby.Plugins.YouTube.YtDlp
 
             if (string.IsNullOrEmpty(url))
             {
-                _logger.Error("YouTube: no playable single-file stream for {0}. stderr: {1}", videoId, Truncate(result.StandardError, 500));
+                // The bot check is by far the most common reason a resolve fails, and the raw
+                // stderr buries the one thing that actually fixes it. Call it out explicitly.
+                if (LooksLikeBotCheck(result.StandardError))
+                {
+                    _logger.Error(
+                        "YouTube: {0} could not be resolved because YouTube is challenging this server with its " +
+                        "\"Sign in to confirm you're not a bot\" check. Add a cookies.txt in the plugin settings — " +
+                        "browsing and search work without cookies, but playback from a flagged IP does not.",
+                        videoId);
+                }
+                else
+                {
+                    _logger.Error("YouTube: no playable single-file stream for {0}. stderr: {1}", videoId, Truncate(result.StandardError, 500));
+                }
                 return sources;
             }
 
@@ -316,6 +329,13 @@ namespace Emby.Plugins.YouTube.YtDlp
             // Emby servers are frequently headless and behind IPv6-less networks; forcing IPv4
             // avoids long stalls when a AAAA route exists but does not work.
             arguments.Add("--force-ipv4");
+
+            var playerClient = Config.PlayerClient;
+            if (!string.IsNullOrWhiteSpace(playerClient))
+            {
+                arguments.Add("--extractor-args");
+                arguments.Add("youtube:player_client=" + playerClient.Trim());
+            }
         }
 
         private async Task<ProcessResult> Execute(List<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
@@ -380,6 +400,18 @@ namespace Emby.Plugins.YouTube.YtDlp
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed)
                 ? parsed
                 : (DateTimeOffset?)null;
+        }
+
+        /// <summary>
+        /// Recognises YouTube's anti-bot challenge. Matched on several fragments because the exact
+        /// wording (and its curly apostrophe) has changed more than once.
+        /// </summary>
+        private static bool LooksLikeBotCheck(string stderr)
+        {
+            if (string.IsNullOrEmpty(stderr)) return false;
+            return stderr.IndexOf("not a bot", StringComparison.OrdinalIgnoreCase) >= 0
+                || stderr.IndexOf("Sign in to confirm", StringComparison.OrdinalIgnoreCase) >= 0
+                || stderr.IndexOf("confirm you", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string Truncate(string value, int max)

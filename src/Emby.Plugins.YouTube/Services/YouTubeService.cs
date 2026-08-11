@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Emby.Plugins.YouTube.Api;
 using Emby.Plugins.YouTube.YtDlp;
+using MediaBrowser.Controller.Net;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Services;
 
@@ -31,6 +32,26 @@ namespace Emby.Plugins.YouTube.Services
     {
         public string Query { get; set; }
     }
+
+    /// <summary>
+    /// Serves the configuration page's controller script.
+    ///
+    /// Emby 4.9 does not execute inline scripts in a plugin configuration page — the
+    /// `/configurationpage` route has no controller, and the markup is applied with innerHTML.
+    /// The only hook left is the view root's `data-require`, which is passed to require(), and
+    /// RequireJS only treats an id as a URL when it starts with "/" or ends in ".js". Hence a real
+    /// endpoint with a .js path rather than another PluginPageInfo, whose
+    /// "/web/ConfigurationPage?name=…" URL RequireJS would try to resolve as a module name.
+    /// </summary>
+    /// <remarks>
+    /// Served unauthenticated because RequireJS fetches URL dependencies with a plain script tag,
+    /// which carries no X-Emby-Token — with the default policy the load 401s and the page stays
+    /// inert. Safe to expose: the file is static UI logic plus the plugin's own GUID, and every
+    /// request it makes goes through the authenticated endpoints above.
+    /// </remarks>
+    [Route("/YouTube/configpage.js", "GET", Summary = "Controller script for the configuration page")]
+    [Unauthenticated]
+    public class ConfigPageScriptRequest { }
 
     public class AuthStatusResponse
     {
@@ -65,7 +86,7 @@ namespace Emby.Plugins.YouTube.Services
     /// another device — so the polling loop runs detached and the page polls Status until the
     /// state flips. Nothing here is user-specific, so a single static slot is enough.
     /// </summary>
-    public class YouTubeService : IService
+    public class YouTubeService : IService, IRequiresRequest
     {
         private static readonly object Gate = new object();
         private static AuthStatusResponse _authState = new AuthStatusResponse { State = "unlinked" };
@@ -76,9 +97,14 @@ namespace Emby.Plugins.YouTube.Services
         private readonly GoogleOAuth _oauth;
         private readonly YtDlpBootstrap _bootstrap;
         private readonly YtDlpClient _ytDlp;
+        private readonly IHttpResultFactory _resultFactory;
 
-        public YouTubeService(ILogManager logManager)
+        /// <summary>Set by Emby before a request is dispatched (IRequiresRequest).</summary>
+        public IRequest Request { get; set; }
+
+        public YouTubeService(ILogManager logManager, IHttpResultFactory resultFactory)
         {
+            _resultFactory = resultFactory;
             _logger = logManager.GetLogger("YouTubeService");
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
             _oauth = new GoogleOAuth(_http, _logger);
@@ -263,6 +289,30 @@ namespace Emby.Plugins.YouTube.Services
             {
                 _logger.ErrorException("YouTube: test search failed.", ex);
                 return new TestSearchResponse { Success = false, Message = ex.Message };
+            }
+        }
+
+        public object Get(ConfigPageScriptRequest request)
+        {
+            var type = GetType();
+            // Namespace here is Emby.Plugins.YouTube.Services, but the resource sits under
+            // Configuration — so build the name from the assembly root, not this type's namespace.
+            const string resourceName = "Emby.Plugins.YouTube.Configuration.configPage.js";
+
+            using (var stream = type.Assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                {
+                    _logger.Error("YouTube: embedded resource '{0}' is missing.", resourceName);
+                    return _resultFactory.GetResult(Request, "/* configuration script not found */".AsSpan(),
+                        "application/javascript", null);
+                }
+
+                using (var reader = new System.IO.StreamReader(stream))
+                {
+                    var script = reader.ReadToEnd();
+                    return _resultFactory.GetResult(Request, script.AsSpan(), "application/javascript", null);
+                }
             }
         }
 
