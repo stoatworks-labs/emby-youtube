@@ -1,0 +1,371 @@
+<div id="youtubeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="youtubeConfigForm">
+
+                <fieldset class="verticalSection">
+                    <legend><h2>Google account</h2></legend>
+                    <p class="fieldDescription">
+                        Linking a Google account enables your subscriptions and their recent uploads.
+                        Create an OAuth client of type <strong>TV and Limited Input</strong> in a Google Cloud
+                        project with the YouTube Data API v3 enabled — a Web or Desktop client will be
+                        rejected by the device flow.
+                    </p>
+
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="txtClientId" label="OAuth client id" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="password" id="txtClientSecret" label="OAuth client secret" />
+                    </div>
+
+                    <div id="authStatus" class="fieldDescription" style="margin: 1em 0;"></div>
+                    <div id="authCode" style="display:none; margin: 1em 0; padding: 1em; border: 1px solid #444; border-radius: 4px;">
+                        <div>Open <a id="authUrl" href="#" target="_blank" rel="noopener noreferrer"></a> and enter:</div>
+                        <div id="authUserCode" style="font-size: 1.8em; font-weight: bold; letter-spacing: .12em; margin-top: .4em;"></div>
+                    </div>
+
+                    <button is="emby-button" type="button" id="btnLink" class="raised">Link account</button>
+                    <button is="emby-button" type="button" id="btnUnlink" class="raised subdued">Unlink</button>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h2>Cookies</h2></legend>
+                    <p class="fieldDescription">
+                        Required for the <strong>Recommended</strong> feed: YouTube only serves a personalised
+                        home feed to a signed-in session, and the Data API has never exposed the recommender.
+                        Export a <code>cookies.txt</code> in Netscape format from a browser signed in to your
+                        account and paste it below. Cookies also let age-restricted videos resolve.
+                    </p>
+                    <p class="fieldDescription" style="color:#c90;">
+                        These cookies grant access to your Google account. They are stored in Emby's plugin
+                        configuration and written to the plugin data folder on this server.
+                    </p>
+                    <div class="inputContainer">
+                        <textarea is="emby-textarea" id="txtCookies" label="cookies.txt" rows="6"
+                                  placeholder="# Netscape HTTP Cookie File"></textarea>
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h2>Sections</h2></legend>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkLatest" />
+                        <span>Latest from Subscriptions</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkSubscriptions" />
+                        <span>Subscriptions</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkRecommendations" />
+                        <span>Recommended (needs cookies)</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkTrending" />
+                        <span>Trending</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkSavedSearches" />
+                        <span>Saved searches</span>
+                    </label>
+
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="txtRegion" label="Region code for Trending (e.g. GB)" />
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h2>Saved searches</h2></legend>
+                    <p class="fieldDescription">
+                        Emby 4.9 ignores the old searchable-channel interface, so the client's search box
+                        cannot query YouTube live. Each saved search below becomes a folder in the channel;
+                        opening it runs a real search.
+                    </p>
+                    <div class="inputContainer">
+                        <textarea is="emby-textarea" id="txtSearches" label="One per line, as Name | query" rows="5"
+                                  placeholder="Live coding | live coding&#10;Synth demos | eurorack demo"></textarea>
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h2>Playback</h2></legend>
+                    <p class="fieldDescription">
+                        Above 720p YouTube serves video and audio as separate streams, and an Emby media
+                        source carries exactly one URL — so the plugin selects the best single file that
+                        already contains both. In practice that caps playback at 720p. Raising this value
+                        only helps for the videos that happen to offer a higher combined stream.
+                    </p>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="txtMaxHeight" label="Maximum height (0 = unlimited)" min="0" max="4320" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="txtMinDuration" label="Hide videos shorter than (seconds; 60 removes Shorts)" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="txtMaxPerChannel" label="Videos per channel" min="1" max="500" />
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" id="txtMaxLatest" label="Videos in the Latest feed" min="1" max="500" />
+                    </div>
+                </fieldset>
+
+                <fieldset class="verticalSection">
+                    <legend><h2>yt-dlp</h2></legend>
+                    <p class="fieldDescription">
+                        The Emby container ships neither yt-dlp nor Python, so the plugin manages its own
+                        self-contained copy in the plugin data folder. Keep it updated — YouTube changes its
+                        player often, and a stale build is the usual reason playback stops working.
+                    </p>
+                    <div id="ytDlpStatus" class="fieldDescription"></div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="text" id="txtYtDlpPath" label="Path override (leave blank to use the managed copy)" />
+                    </div>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkAutoUpdate" />
+                        <span>Update yt-dlp automatically (daily)</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input is="emby-checkbox" type="checkbox" id="chkDebug" />
+                        <span>Verbose logging</span>
+                    </label>
+                    <button is="emby-button" type="button" id="btnUpdateYtDlp" class="raised subdued">Update now</button>
+                    <button is="emby-button" type="button" id="btnTestSearch" class="raised subdued">Test search</button>
+                    <div id="testResult" class="fieldDescription" style="margin-top:1em;"></div>
+                </fieldset>
+
+                <button is="emby-button" type="submit" class="raised button-submit block">
+                    <span>Save</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = "6b1e2f8a-3c47-4d5b-9a10-7e2c4f8d1b93";
+            var authPollTimer = null;
+
+            function page() {
+                return document.querySelector('#youtubeConfigPage');
+            }
+
+            function el(id) {
+                return page().querySelector('#' + id);
+            }
+
+            function parseSearches(text) {
+                return (text || '').split('\n')
+                    .map(function (line) { return line.trim(); })
+                    .filter(function (line) { return line.length > 0; })
+                    .map(function (line) {
+                        var separator = line.indexOf('|');
+                        if (separator === -1) {
+                            return { Name: line, Query: line, SortBy: 'relevance' };
+                        }
+                        return {
+                            Name: line.substring(0, separator).trim(),
+                            Query: line.substring(separator + 1).trim(),
+                            SortBy: 'relevance'
+                        };
+                    })
+                    .filter(function (s) { return s.Query.length > 0; });
+            }
+
+            function formatSearches(searches) {
+                return (searches || []).map(function (s) {
+                    return (s.Name || s.Query) + ' | ' + s.Query;
+                }).join('\n');
+            }
+
+            function load(config) {
+                el('txtClientId').value = config.ClientId || '';
+                el('txtClientSecret').value = config.ClientSecret || '';
+                el('txtCookies').value = config.CookiesTxt || '';
+                el('txtRegion').value = config.RegionCode || 'GB';
+                el('txtSearches').value = formatSearches(config.SavedSearches);
+                el('txtMaxHeight').value = config.MaxHeight;
+                el('txtMinDuration').value = config.MinimumDurationSeconds;
+                el('txtMaxPerChannel').value = config.MaxVideosPerChannel;
+                el('txtMaxLatest').value = config.MaxLatestVideos;
+                el('txtYtDlpPath').value = config.YtDlpPath || '';
+
+                el('chkLatest').checked = config.EnableLatest;
+                el('chkSubscriptions').checked = config.EnableSubscriptions;
+                el('chkRecommendations').checked = config.EnableRecommendations;
+                el('chkTrending').checked = config.EnableTrending;
+                el('chkSavedSearches').checked = config.EnableSavedSearches;
+                el('chkAutoUpdate').checked = config.AutoUpdateYtDlp;
+                el('chkDebug').checked = config.EnableDebugLogging;
+            }
+
+            function save() {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.ClientId = el('txtClientId').value.trim();
+                    config.ClientSecret = el('txtClientSecret').value.trim();
+                    config.CookiesTxt = el('txtCookies').value;
+                    config.RegionCode = el('txtRegion').value.trim() || 'GB';
+                    config.SavedSearches = parseSearches(el('txtSearches').value);
+                    config.MaxHeight = parseInt(el('txtMaxHeight').value, 10) || 0;
+                    config.MinimumDurationSeconds = parseInt(el('txtMinDuration').value, 10) || 0;
+                    config.MaxVideosPerChannel = parseInt(el('txtMaxPerChannel').value, 10) || 50;
+                    config.MaxLatestVideos = parseInt(el('txtMaxLatest').value, 10) || 100;
+                    config.YtDlpPath = el('txtYtDlpPath').value.trim();
+
+                    config.EnableLatest = el('chkLatest').checked;
+                    config.EnableSubscriptions = el('chkSubscriptions').checked;
+                    config.EnableRecommendations = el('chkRecommendations').checked;
+                    config.EnableTrending = el('chkTrending').checked;
+                    config.EnableSavedSearches = el('chkSavedSearches').checked;
+                    config.AutoUpdateYtDlp = el('chkAutoUpdate').checked;
+                    config.EnableDebugLogging = el('chkDebug').checked;
+
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                        refreshAuthStatus();
+                    });
+                });
+            }
+
+            function refreshAuthStatus() {
+                ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('YouTube/Auth/Status'),
+                    dataType: 'json'
+                }).then(function (status) {
+                    var message = status.Message || '';
+                    if (status.State === 'linked') {
+                        message = 'Linked. Subscriptions and uploads are available.';
+                    } else if (status.State === 'unlinked') {
+                        message = 'Not linked. Subscriptions and the Latest feed will be empty.';
+                    }
+                    if (!status.HasCookies) {
+                        message += ' No cookies saved, so the Recommended feed is unavailable.';
+                    }
+                    el('authStatus').textContent = message;
+
+                    if (status.State === 'pending' && status.UserCode) {
+                        el('authCode').style.display = '';
+                        el('authUserCode').textContent = status.UserCode;
+                        var link = el('authUrl');
+                        link.textContent = status.VerificationUrl;
+                        link.href = status.VerificationUrl;
+                    } else {
+                        el('authCode').style.display = 'none';
+                        if (authPollTimer) {
+                            clearInterval(authPollTimer);
+                            authPollTimer = null;
+                        }
+                    }
+                }, function () {
+                    el('authStatus').textContent = 'Could not read the link status.';
+                });
+            }
+
+            function refreshYtDlpStatus() {
+                ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl('YouTube/YtDlp/Status'),
+                    dataType: 'json'
+                }).then(function (status) {
+                    el('ytDlpStatus').textContent = status.Installed
+                        ? 'yt-dlp ' + (status.Version || 'unknown') + ' at ' + status.Path
+                        : (status.Message || 'yt-dlp is not installed.');
+                }, function () {
+                    el('ytDlpStatus').textContent = 'Could not read the yt-dlp status.';
+                });
+            }
+
+            function startLink() {
+                Dashboard.showLoadingMsg();
+                // Save first so the server has the client id and secret this flow needs.
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.ClientId = el('txtClientId').value.trim();
+                    config.ClientSecret = el('txtClientSecret').value.trim();
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('YouTube/Auth/Start'),
+                            dataType: 'json'
+                        }).then(function (status) {
+                            Dashboard.hideLoadingMsg();
+                            if (status.State === 'error') {
+                                Dashboard.alert({ message: status.Message || 'Could not start the device flow.' });
+                                return;
+                            }
+                            refreshAuthStatus();
+                            if (authPollTimer) clearInterval(authPollTimer);
+                            authPollTimer = setInterval(refreshAuthStatus, 5000);
+                        }, function () {
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert({ message: 'Could not start the device flow.' });
+                        });
+                    });
+                });
+            }
+
+            function bind() {
+                el('youtubeConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    save();
+                    return false;
+                });
+
+                el('btnLink').addEventListener('click', startLink);
+
+                el('btnUnlink').addEventListener('click', function () {
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('YouTube/Auth/Unlink'),
+                        dataType: 'json'
+                    }).then(refreshAuthStatus);
+                });
+
+                el('btnUpdateYtDlp').addEventListener('click', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('YouTube/YtDlp/Update'),
+                        dataType: 'json'
+                    }).then(function (status) {
+                        Dashboard.hideLoadingMsg();
+                        el('ytDlpStatus').textContent = status.Installed
+                            ? 'yt-dlp ' + (status.Version || 'unknown') + ' at ' + status.Path
+                            : (status.Message || 'Update failed.');
+                    }, function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert({ message: 'The yt-dlp update failed. Check the server log.' });
+                    });
+                });
+
+                el('btnTestSearch').addEventListener('click', function () {
+                    el('testResult').textContent = 'Searching…';
+                    ApiClient.ajax({
+                        type: 'GET',
+                        url: ApiClient.getUrl('YouTube/TestSearch', { Query: 'lofi' }),
+                        dataType: 'json'
+                    }).then(function (result) {
+                        el('testResult').textContent = result.Success
+                            ? 'OK — ' + result.Count + ' results: ' + result.Titles.join('; ')
+                            : (result.Message || 'Search failed.');
+                    }, function () {
+                        el('testResult').textContent = 'The test search request failed.';
+                    });
+                });
+            }
+
+            page().addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    load(config);
+                    Dashboard.hideLoadingMsg();
+                    refreshAuthStatus();
+                    refreshYtDlpStatus();
+                });
+            });
+
+            bind();
+        })();
+    </script>
+</div>

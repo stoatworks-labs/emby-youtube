@@ -1,0 +1,56 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore src/Emby.Plugins.YouTube/Emby.Plugins.YouTube.csproj
+
+      - name: Build
+        run: >
+          dotnet build src/Emby.Plugins.YouTube/Emby.Plugins.YouTube.csproj
+          -c Release --no-restore
+          -warnaserror
+
+      - name: Verify the plugin is a single self-contained assembly
+        # Emby loads a bare .dll from its plugins folder and does not resolve NuGet dependencies at
+        # runtime, so any extra assembly in the output would fail to load on a real server.
+        run: |
+          output="src/Emby.Plugins.YouTube/bin/Release/netstandard2.0"
+          echo "Build output:"
+          ls -la "$output"
+
+          unexpected=$(find "$output" -maxdepth 1 -name '*.dll' ! -name 'Emby.Plugins.YouTube.dll')
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unexpected assemblies in the plugin output:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+          test -f "$output/Emby.Plugins.YouTube.dll" || {
+            echo "::error::Emby.Plugins.YouTube.dll was not produced."
+            exit 1
+          }
+          echo "OK: single-assembly output confirmed."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Emby.Plugins.YouTube
+          path: src/Emby.Plugins.YouTube/bin/Release/netstandard2.0/Emby.Plugins.YouTube.dll
+          if-no-files-found: error
