@@ -5,9 +5,9 @@
     <AssemblyName>Emby.Plugins.YouTube</AssemblyName>
     <RootNamespace>Emby.Plugins.YouTube</RootNamespace>
     <LangVersion>latest</LangVersion>
-    <Version>0.1.7</Version>
-    <AssemblyVersion>0.1.7.0</AssemblyVersion>
-    <FileVersion>0.1.7.0</FileVersion>
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!-- Emby loads a bare .dll from its plugin folder; it does not resolve NuGet
          dependencies at runtime, so the plugin must not pull in extra assemblies. -->
