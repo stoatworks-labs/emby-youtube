@@ -10,6 +10,9 @@ A YouTube channel plugin for Emby Server. Browse your subscriptions, see recent 
 them in one feed, get your real recommendation feed, and run saved searches — all from any Emby
 client.
 
+![The YouTube channel in Emby, showing its Latest from Subscriptions, Recommended, Searches and
+Subscriptions folders](docs/screenshots/channel-root.png)
+
 ---
 
 ## What it does
