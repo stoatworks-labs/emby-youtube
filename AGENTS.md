@@ -139,3 +139,10 @@ playback, the OAuth device flow end to end, the yt-dlp download path, and stream
 
 There is no container runtime on the development machine, so CI is the only build proof. Do not
 claim any runtime behaviour works until someone has actually run it.
+
+## Notes
+
+`docs/NOTES.md` carries this repo's working notes — current status, decisions
+already made, and the traps that have actually bitten. Read it before changing
+anything non-obvious. Cross-cutting fleet knowledge lives in
+[fleet-notes](https://github.com/stoatworks-labs/fleet-notes).
