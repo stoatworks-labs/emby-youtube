@@ -132,10 +132,13 @@ is a bug — see the single-DLL trap above.
 ## 7. Verified vs not
 
 **Verified:** compiles clean against Emby 4.9.1.90 with zero warnings; single-DLL output confirmed
-by inspecting the build folder; the API surface used was dumped from the real assemblies.
+by inspecting the build folder; the API surface used was dumped from the real assemblies. On a real
+Emby 4.9.5.0 server (2026-08-11, commits 9fbd3eb and f6b01d3): it loads with zero errors, the
+configuration page round-trips to disk, yt-dlp self-installs and runs in the stock container, a
+saved search indexed 50 videos, the channel and its folders appear, 80 subscriptions loaded through
+the Data API, and a video resolved to a 640×360 mp4 and played in the Emby web client.
 
-**Not verified — no Emby server was available:** loading into a server, folder browsing, any feed,
-playback, the OAuth device flow end to end, the yt-dlp download path, and stream resolution.
+**Not verified:** the Latest, Recommended and Trending feeds, and the OAuth device flow end to end.
 
 There is no container runtime on the development machine, so CI is the only build proof. Do not
 claim any runtime behaviour works until someone has actually run it.

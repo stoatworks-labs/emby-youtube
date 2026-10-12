@@ -2,9 +2,9 @@
 
 > **AI-assisted project.** This codebase was created with [Claude Code](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. It's been **deployed to a real Emby
-> 4.9.5.0 server**, where browsing, search and the configuration page are confirmed working.
-> Playback is blocked by YouTube's bot check unless you supply cookies.
-> [Verification](#verification) has what is and isn't proven.
+> 4.9.5.0 server**, where browsing, search, subscriptions, playback and the configuration page
+> are confirmed working. On a server whose IP YouTube has flagged, playback is blocked by its bot
+> check unless you supply cookies. [Verification](#verification) has what is and isn't proven.
 
 A YouTube channel plugin for Emby Server. Browse your subscriptions, see recent uploads from all of
 them in one feed, get your actual recommendation feed, and run saved searches, all from any Emby
@@ -136,8 +136,9 @@ Here's where it actually stands, because "it compiles" isn't "it works":
 | yt-dlp self-download + ELF interpreter patch    | **Verified** — runs in the stock Emby container |
 | Live search via yt-dlp                          | **Verified** — 50 videos indexed from a search  |
 | Channel appears with its folders                | **Verified** — visible in the Emby UI           |
-| Subscriptions / Latest / Recommended feeds      | **Not tested** — needs OAuth and cookies        |
-| Playback                                        | **Blocked without cookies** — see above         |
+| Subscriptions via the Data API                  | **Verified** — 80 subscriptions loaded          |
+| Latest / Recommended feeds                      | **Not tested**                                  |
+| Playback                                        | **Verified** — a 640×360 mp4 played in the Emby web client; a flagged IP needs cookies, see above |
 
 The API surface was dumped from `MediaBrowser.Controller.dll` and `MediaBrowser.Model.dll` 4.9.1.90
 via `MetadataLoadContext` rather than copied from tutorials, which is how I caught the
