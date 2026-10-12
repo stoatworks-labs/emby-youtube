@@ -119,7 +119,8 @@ the settings.
 
 > These cookies grant access to your Google account. They are stored in Emby's plugin configuration
 > and written to the plugin data folder on the server. Anyone with access to either can use them.
-> If that's not a trade-off you want, leave Recommended disabled; everything else works without it.
+> If that's not a trade-off you want, leave the cookies out and Recommended disabled. Browsing and
+> search still work without them, but on a server whose IP YouTube has flagged, playback won't.
 
 ## Verification
 
